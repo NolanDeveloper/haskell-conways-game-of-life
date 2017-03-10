@@ -61,10 +61,10 @@ processExposeEvent context@(MkContext
     forM_ [0..39] $ \row ->
         forM_ [0..39] $ \col ->
             if screen V.! row V.! col
-            then let x = fromIntegral $ col * 10
-                     y = fromIntegral $ row * 10
-                 in fillRectangle display window gc x y 10 10
-            else return ()
+                then let x = fromIntegral $ col * 10
+                         y = fromIntegral $ row * 10
+                     in fillRectangle display window gc x y 10 10
+                else return ()
     sendEvent display window False exposureMask eventPtr
     return context
 
