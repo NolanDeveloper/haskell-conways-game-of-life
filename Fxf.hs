@@ -48,9 +48,9 @@ data Context a
 type ContextAction a = StateT (Context a) IO
 
 class Game a where
-    keyDown :: KeySym -> ContextAction a ()
-    keyUp :: KeySym -> ContextAction a ()
-    update :: ContextAction a ()
+    gameKeyDown :: KeySym -> ContextAction a ()
+    gameKeyUp :: KeySym -> ContextAction a ()
+    gameUpdate :: ContextAction a ()
 
 processExposeEvent :: Game a => Context a -> IO (Context a)
 processExposeEvent context@(MkContext
@@ -74,7 +74,7 @@ processKeyEvent isKeyDown context = do
     let display = contextDisplay context
     keyEvent <- get_KeyEvent eventPtr
     let code = keyCode keyEvent
-    let handler = if isKeyDown then keyDown else keyUp
+    let handler = if isKeyDown then gameKeyDown else gameKeyUp
     keySym <- keycodeToKeysym display code 0
     ((), context') <- runStateT (handler keySym) context
     return context'
@@ -99,7 +99,7 @@ loop context = do
             context' <- processEvent context
             loop context'
         else do
-            ((), context') <- runStateT update context
+            ((), context') <- runStateT gameUpdate context
             loop context'
 
 clearScreen :: ContextAction a ()

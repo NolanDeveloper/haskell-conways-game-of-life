@@ -13,8 +13,8 @@ data GameOfLife = MkGameOfLife Universe UTCTime
 emptyUniverse :: Universe
 emptyUniverse = V.replicate 40 $ V.replicate 40 False
 
-makeLive :: Universe -> Int -> Int -> Universe
-makeLive universe row col =
+revive :: Universe -> Int -> Int -> Universe
+revive universe row col =
     let oldRow = universe V.! row
         newRow = oldRow V.// [(col, True)]
     in universe V.// [(row, newRow)]
@@ -62,7 +62,7 @@ calculateInitialState = do
             where
             go [] universe = universe
             go ((row, col):others) universe =
-                let modifiedUniverse = makeLive universe row col
+                let modifiedUniverse = revive universe row col
                 in go others modifiedUniverse
     currentTime <- getCurrentTime
     return $ MkGameOfLife universe currentTime
@@ -77,9 +77,9 @@ drawUniverse universe = do
 simulationStep = 0.05
 
 instance Game GameOfLife where
-    keyDown key = return ()
-    keyUp key = return ()
-    update = do
+    gameKeyDown key = return ()
+    gameKeyUp key = return ()
+    gameUpdate = do
         (MkGameOfLife universe lastUpdateTime) <- getGame
         currentTime <- lift getCurrentTime
         let dt = diffUTCTime currentTime lastUpdateTime
