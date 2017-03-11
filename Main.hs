@@ -8,19 +8,31 @@ import Control.Monad
 
 type Universe = V.Vector (V.Vector Bool)
 
-data GameOfLife = MkGameOfLife Universe UTCTime
+data GameOfLife = MkPreparation Universe Int Int
+                | MkSimulation Universe UTCTime
 
 emptyUniverse :: Universe
 emptyUniverse = V.replicate 40 $ V.replicate 40 False
 
-revive :: Universe -> Int -> Int -> Universe
-revive universe row col =
-    let oldRow = universe V.! row
-        newRow = oldRow V.// [(col, True)]
-    in universe V.// [(row, newRow)]
-
 isHabitable :: Universe -> Int -> Int -> Bool
 isHabitable universe row col = universe V.! (row `mod` 40) V.! (col `mod` 40)
+
+setCell :: Universe -> Int -> Int -> Bool -> Universe
+setCell universe row col alive =
+    let oldRow = universe V.! row
+        newRow = oldRow V.// [(col, alive)]
+    in universe V.// [(row, newRow)]
+
+revive :: Universe -> Int -> Int -> Universe
+revive universe row col = setCell universe row col True
+
+kill :: Universe -> Int -> Int -> Universe
+kill universe row col = setCell universe row col False
+
+switchCell :: Universe -> Int -> Int -> Universe
+switchCell universe row col =
+    let habitable = isHabitable universe row col
+    in setCell universe row col (not habitable)
 
 neighbours :: Int -> Int -> [(Int, Int)]
 neighbours row col = do
@@ -53,21 +65,7 @@ nextUniverse universe =
                 habitable = isHabitable universe row col
             in ruleOfGame habitable neighbours
 
-calculateInitialState :: IO GameOfLife
-calculateInitialState = do
-    let content = [ ( 0,  1), ( 1,  2), ( 2,  0), ( 2,  1)
-                  , ( 2,  2), ( 2, 11), ( 2, 12), ( 2, 13)
-                  , ( 1, 12), ( 3, 12), ( 3, 13), ( 3, 14) ]
-    let universe = go content emptyUniverse
-            where
-            go [] universe = universe
-            go ((row, col):others) universe =
-                let modifiedUniverse = revive universe row col
-                in go others modifiedUniverse
-    currentTime <- getCurrentTime
-    return $ MkGameOfLife universe currentTime
-
-drawUniverse :: Universe -> ContextAction GameOfLife ()
+drawUniverse :: Universe -> ContextAction ()
 drawUniverse universe = do
     forM_ [0..39] $ \row ->
         forM_ [0..39] $ \col ->
@@ -76,21 +74,79 @@ drawUniverse universe = do
 
 simulationStep = 0.05
 
+switchPixel :: Int -> Int -> ContextAction ()
+switchPixel row col = do
+    oldPixel <- getPixel row col
+    let newPixel = not oldPixel
+    setPixel row col newPixel
+
+drawMainDiagonal :: Int -> Int -> ContextAction ()
+drawMainDiagonal row col = do
+    if row < col
+        then go 0 (col - row)
+        else go (row - col) 0
+    where
+    go 40 _ = return ()
+    go _ 40 = return ()
+    go row col = do
+        switchPixel row col
+        go (row + 1) (col + 1)
+
+drawSubDiagonal :: Int -> Int -> ContextAction ()
+drawSubDiagonal row col = do
+    if col + row < 40
+        then go 0 (col + row)
+        else go (row - (39 - col)) 39
+    where
+    go 40 _ = return ()
+    go _ (-1) = return ()
+    go row col = do
+        switchPixel row col
+        go (row + 1) (col - 1)
+
+drawCursor :: Int -> Int -> ContextAction ()
+drawCursor row col = do
+    drawSubDiagonal row col
+    drawMainDiagonal row col
+
 instance Game GameOfLife where
-    gameKeyDown key = return ()
-    gameKeyUp key = return ()
-    gameUpdate = do
-        (MkGameOfLife universe lastUpdateTime) <- getGame
+    gameKeyDown game@(MkPreparation universe row col) key
+        | xK_Left   == key = return $ MkPreparation universe row (decMod col)
+        | xK_Right  == key = return $ MkPreparation universe row (incMod col)
+        | xK_Up     == key = return $ MkPreparation universe (decMod row) col
+        | xK_Down   == key = return $ MkPreparation universe (incMod row) col
+        | xK_space  == key =
+            let universe' = switchCell universe row col
+            in return $ MkPreparation universe' row col
+        | xK_Return == key = do
+            currentTime <- lift getCurrentTime
+            return $ MkSimulation universe currentTime
+        | otherwise       = return game
+        where
+        decMod x = (x - 1) `mod` 40
+        incMod x = (x + 1) `mod` 40
+    gameKeyDown game@(MkSimulation universe _) key
+        | xK_Return == key = return $ MkPreparation universe 20 20
+        | otherwise        = return game
+
+    gameKeyUp game key = return game
+
+    gameUpdate game@(MkPreparation universe row col) = do
+        drawUniverse universe
+        drawCursor row col
+        return game
+
+    gameUpdate game@(MkSimulation universe lastUpdateTime) = do
         currentTime <- lift getCurrentTime
         let dt = diffUTCTime currentTime lastUpdateTime
         if dt < simulationStep
-            then return ()
+            then return game
             else do
                 drawUniverse universe
                 let newUniverse = nextUniverse universe
-                setGame (MkGameOfLife newUniverse currentTime)
+                return (MkSimulation newUniverse currentTime)
 
 main = do
-    initialState <- calculateInitialState
-    runGame "Conway's life" initialState
+    let game = MkPreparation emptyUniverse 20 20
+    runGame "Conway's life" game
 

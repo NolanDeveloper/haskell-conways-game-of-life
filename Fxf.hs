@@ -4,8 +4,6 @@ module Fxf(
     clearScreen,
     setPixel,
     getPixel,
-    setGame,
-    getGame,
     runGame
 ) where
 
@@ -33,7 +31,7 @@ emptyScreen = V.replicate screenSize $ V.replicate screenSize False
 keyCode :: XKeyEvent -> KeyCode
 keyCode (_, _, _, _, _, _, _, _, code, _) = code
 
-data Context a
+data Context
     = MkContext
     { contextDisplay :: X.Display
     , contextWindow :: Drawable
@@ -42,19 +40,18 @@ data Context a
     , contextWhite :: X.Pixel
     , contextEventPtr :: XEventPtr
     , contextScreen :: Screen
-    , contextGame :: a
     }
 
-type ContextAction a = StateT (Context a) IO
+type ContextAction = StateT Context IO
 
 class Game a where
-    gameKeyDown :: KeySym -> ContextAction a ()
-    gameKeyUp :: KeySym -> ContextAction a ()
-    gameUpdate :: ContextAction a ()
+    gameKeyDown :: a -> KeySym -> ContextAction a
+    gameKeyUp :: a -> KeySym -> ContextAction a
+    gameUpdate :: a -> ContextAction a
 
-processExposeEvent :: Game a => Context a -> IO (Context a)
+processExposeEvent :: Context -> IO ()
 processExposeEvent context@(MkContext
-        display window gc black white eventPtr screen _) = do
+        display window gc black white eventPtr screen) = do
     setForeground display gc black
     fillRectangle display window gc 0 0 400 400
     setForeground display gc white
@@ -66,48 +63,49 @@ processExposeEvent context@(MkContext
                      in fillRectangle display window gc x y 10 10
                 else return ()
     sendEvent display window False exposureMask eventPtr
-    return context
 
-processKeyEvent :: Game a => Bool -> Context a -> IO (Context a)
-processKeyEvent isKeyDown context = do
+processKeyEvent :: Game a => Bool -> Context -> a -> IO (a, Context)
+processKeyEvent isKeyDown context game = do
     let eventPtr = contextEventPtr context
     let display = contextDisplay context
     keyEvent <- get_KeyEvent eventPtr
     let code = keyCode keyEvent
     let handler = if isKeyDown then gameKeyDown else gameKeyUp
     keySym <- keycodeToKeysym display code 0
-    ((), context') <- runStateT (handler keySym) context
-    return context'
+    (game', context') <- runStateT (handler game keySym) context
+    return (game', context')
 
-processEvent :: Game a => Context a -> IO (Context a)
-processEvent context = do
+processEvent :: Game a => Context -> a -> IO (a, Context)
+processEvent context game = do
     let display = contextDisplay context
     let eventPtr = contextEventPtr context
     nextEvent display eventPtr
     eventType <- get_EventType eventPtr
     if eventType == expose
-        then processExposeEvent context
+        then do
+            processExposeEvent context
+            return (game, context)
         else if eventType `elem` [keyPress, keyRelease]
-            then processKeyEvent (eventType == keyPress) context
-            else return context
+            then processKeyEvent (eventType == keyPress) context game
+            else return (game, context)
 
-loop :: Game a => Context a -> IO ()
-loop context = do
+loop :: Game a => Context -> a -> IO ()
+loop context game = do
     nPending <- pending $ contextDisplay context
     if 0 /= nPending
         then do
-            context' <- processEvent context
-            loop context'
+            (game', context') <- processEvent context game
+            loop context' game'
         else do
-            ((), context') <- runStateT gameUpdate context
-            loop context'
+            (game', context') <- runStateT (gameUpdate game) context
+            loop context' game'
 
-clearScreen :: ContextAction a ()
+clearScreen :: ContextAction ()
 clearScreen = do
     context <- get
     put $ context { contextScreen = emptyScreen }
 
-setPixel :: Int -> Int -> Bool -> ContextAction a ()
+setPixel :: Int -> Int -> Bool -> ContextAction ()
 setPixel row col value = do
     context <- get
     let screen = contextScreen context
@@ -115,21 +113,11 @@ setPixel row col value = do
     let newRow = oldRow V.// [(col, value)]
     put $ context { contextScreen = screen V.// [(row, newRow)] }
 
-getPixel :: Int -> Int -> ContextAction a Bool
+getPixel :: Int -> Int -> ContextAction Bool
 getPixel row col = do
     context <- get
     let screen = contextScreen context
     return $ screen V.! row V.! col
-
-getGame :: ContextAction a a
-getGame = do
-    context <- get
-    return $ contextGame context
-
-setGame :: a -> ContextAction a ()
-setGame game = do
-    context <- get
-    put $ context { contextGame = game }
 
 runGame :: Game a => String -> a -> IO ()
 runGame name initialState = do
@@ -145,8 +133,8 @@ runGame name initialState = do
     selectInput display window mask
     mapWindow display window
     allocaXEvent $ \ptr ->
-        loop $ MkContext display window gc black white ptr
-                         emptyScreen initialState
+        let context = MkContext display window gc black white ptr emptyScreen
+        in loop context initialState
     freeGC display gc
     destroyWindow display window
     closeDisplay display
