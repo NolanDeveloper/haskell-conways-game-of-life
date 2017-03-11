@@ -95,12 +95,12 @@ loop :: Game a => Context a -> IO ()
 loop context = do
     nPending <- pending $ contextDisplay context
     if 0 /= nPending
-    then do
-        context' <- processEvent context
-        loop context'
-    else do
-        ((), context') <- runStateT update context
-        loop context'
+        then do
+            context' <- processEvent context
+            loop context'
+        else do
+            ((), context') <- runStateT update context
+            loop context'
 
 clearScreen :: ContextAction a ()
 clearScreen = do
