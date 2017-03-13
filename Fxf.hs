@@ -19,7 +19,6 @@ import Data.Bits
 import qualified Data.Vector as V
 import Control.Monad.Trans.State
 import Control.Monad
-import Glyphs
 
 type Screen = V.Vector (V.Vector Bool)
 

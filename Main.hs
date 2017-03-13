@@ -110,21 +110,22 @@ drawCursor row col = do
     drawMainDiagonal row col
 
 instance Game GameOfLife where
-    gameKeyDown game@(MkPreparation universe row col) key
-        | xK_Left   == key = return $ MkPreparation universe row (decMod col)
-        | xK_Right  == key = return $ MkPreparation universe row (incMod col)
-        | xK_Up     == key = return $ MkPreparation universe (decMod row) col
-        | xK_Down   == key = return $ MkPreparation universe (incMod row) col
-        | xK_space  == key =
-            let universe' = switchCell universe row col
-            in return $ MkPreparation universe' row col
-        | xK_Return == key = do
-            currentTime <- lift getCurrentTime
-            return $ MkSimulation universe currentTime
-        | otherwise       = return game
-        where
-        decMod x = (x - 1) `mod` 40
-        incMod x = (x + 1) `mod` 40
+    gameKeyDown game@(MkPreparation universe row col) key =
+        let decMod x = (x - 1) `mod` 40
+            incMod x = (x + 1) `mod` 40
+            returnPreparation row col = return $ MkPreparation universe row col
+        in case () of
+        () | xK_Left  == key -> returnPreparation row (decMod col)
+           | xK_Right == key -> returnPreparation row (incMod col)
+           | xK_Up    == key -> returnPreparation (decMod row) col
+           | xK_Down  == key -> returnPreparation (incMod row) col
+           | xK_space == key ->
+               let universe' = switchCell universe row col
+               in return $ MkPreparation universe' row col
+           | xK_Return == key -> do
+               currentTime <- lift getCurrentTime
+               return $ MkSimulation universe currentTime
+           | otherwise       -> return game
     gameKeyDown game@(MkSimulation universe _) key
         | xK_Return == key = return $ MkPreparation universe 20 20
         | otherwise        = return game
